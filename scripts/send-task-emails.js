@@ -5,12 +5,15 @@
 // environment can do (Supabase Edge Functions are HTTPS-only).
 //
 // Modes:
-//   daily     - every active member with an email gets a digest of what's
-//               due today and what's overdue / not completed. Fired by the
-//               workflow's daily schedule.
-//   broadcast - sends one admin-composed message to every active member
-//               with an email. Fired by the app's "Send Update to All"
-//               button via a repository_dispatch event.
+//   daily          - every active member with an email gets a digest of
+//                    what's due today and what's overdue / not completed.
+//                    Fired by the workflow's daily schedule.
+//   broadcast      - sends one admin-composed message to every active member
+//                    (or one, if BROADCAST_RECIPIENT is set) with an email.
+//                    Fired by the app's "Send Update" button.
+//   task-assigned  - sends one instant email to whoever a task was just
+//                    assigned to. Fired automatically by DB.addTask() in the
+//                    app whenever a task's assignee differs from its creator.
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
 
@@ -20,8 +23,8 @@ const SUPABASE_URL = 'https://iubvxxihxqesabwflxsq.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sZr74GUFEBqYaAJi8ar_fg_FtiYhsHz';
 
 const mode = process.argv[2];
-if (mode !== 'daily' && mode !== 'broadcast') {
-  console.error('Usage: node send-task-emails.js <daily|broadcast>');
+if (mode !== 'daily' && mode !== 'broadcast' && mode !== 'task-assigned') {
+  console.error('Usage: node send-task-emails.js <daily|broadcast|task-assigned>');
   process.exit(1);
 }
 
@@ -49,24 +52,50 @@ function taskListHtml(tasks) {
 }
 
 async function main() {
-  const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 465,
     secure: true,
     auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
   });
+  async function sendMail(to, subject, html) {
+    await transporter.sendMail({ from: '"DC Jain Task Management" <' + process.env.GMAIL_USER + '>', to, subject, html });
+  }
 
+  if (mode === 'task-assigned') {
+    const to = (process.env.TASK_RECIPIENT || '').trim();
+    const taskName = (process.env.TASK_NAME || '').trim();
+    const dueDate = (process.env.TASK_DUE_DATE || '').trim();
+    const assignedBy = (process.env.TASK_ASSIGNED_BY || 'A teammate').trim();
+    if (!to || !taskName) {
+      console.error('Missing TASK_RECIPIENT or TASK_NAME');
+      process.exit(1);
+    }
+    const html =
+      '<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937;max-width:560px">' +
+      '<p>You\'ve been assigned a new task:</p>' +
+      '<p style="font-size:16px;font-weight:bold;margin:12px 0 4px">' + escapeHtml(taskName) + '</p>' +
+      (dueDate ? '<p style="margin:0 0 12px">Due: ' + fmtDate(dueDate) + '</p>' : '') +
+      '<p style="color:#6b7280;font-size:12px;margin-top:4px">Assigned by ' + escapeHtml(assignedBy) + '.</p>' +
+      '<p style="margin-top:24px;color:#6b7280;font-size:12px">This is an automated notification from DC Jain Task Management.</p>' +
+      '</div>';
+    try {
+      await sendMail(to, 'New Task Assigned: ' + taskName, html);
+      console.log('Task-assigned email sent to ' + to);
+    } catch (e) {
+      console.error('Failed to send task-assigned email to', to, e.message);
+      process.exit(1);
+    }
+    return;
+  }
+
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const { data: employees, error: empErr } = await sb.from('employees').select('*').eq('active', true);
   if (empErr) throw empErr;
   const recipients = employees.filter((e) => e.email);
   if (!recipients.length) {
     console.log('No active employees have an email on file — nothing to send.');
     return;
-  }
-
-  async function sendMail(to, subject, html) {
-    await transporter.sendMail({ from: '"DC Jain Task Management" <' + process.env.GMAIL_USER + '>', to, subject, html });
   }
 
   if (mode === 'broadcast') {

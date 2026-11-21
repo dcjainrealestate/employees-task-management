@@ -5,7 +5,7 @@ on:
     # 02:30 UTC = 8:00 AM IST — daily task-update digest to every member.
     - cron: '30 2 * * *'
   repository_dispatch:
-    types: [send-broadcast]
+    types: [send-broadcast, send-task-assigned]
   workflow_dispatch:
 
 jobs:
@@ -25,7 +25,7 @@ jobs:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: node scripts/send-task-emails.js daily
       - name: Send admin broadcast
-        if: github.event_name == 'repository_dispatch'
+        if: github.event_name == 'repository_dispatch' && github.event.action == 'send-broadcast'
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -34,3 +34,13 @@ jobs:
           BROADCAST_SENDER: ${{ github.event.client_payload.senderName }}
           BROADCAST_RECIPIENT: ${{ github.event.client_payload.recipientEmail }}
         run: node scripts/send-task-emails.js broadcast
+      - name: Send task-assigned email
+        if: github.event_name == 'repository_dispatch' && github.event.action == 'send-task-assigned'
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          TASK_RECIPIENT: ${{ github.event.client_payload.recipientEmail }}
+          TASK_NAME: ${{ github.event.client_payload.taskName }}
+          TASK_DUE_DATE: ${{ github.event.client_payload.dueDate }}
+          TASK_ASSIGNED_BY: ${{ github.event.client_payload.assignedByName }}
+        run: node scripts/send-task-emails.js task-assigned
