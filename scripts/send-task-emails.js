@@ -73,8 +73,14 @@ async function main() {
     const subject = (process.env.BROADCAST_SUBJECT || '').trim();
     const message = (process.env.BROADCAST_MESSAGE || '').trim();
     const senderName = (process.env.BROADCAST_SENDER || 'Admin').trim();
+    const onlyRecipient = (process.env.BROADCAST_RECIPIENT || '').trim().toLowerCase();
     if (!subject || !message) {
       console.error('Missing BROADCAST_SUBJECT or BROADCAST_MESSAGE');
+      process.exit(1);
+    }
+    const targets = onlyRecipient ? recipients.filter((e) => e.email.toLowerCase() === onlyRecipient) : recipients;
+    if (onlyRecipient && !targets.length) {
+      console.error('BROADCAST_RECIPIENT ' + onlyRecipient + ' does not match any active member with an email on file');
       process.exit(1);
     }
     const html =
@@ -83,11 +89,11 @@ async function main() {
       '<p style="margin-top:24px;color:#6b7280;font-size:12px">— ' + escapeHtml(senderName) + ', via DC Jain Task Management</p>' +
       '</div>';
     let sent = 0, failed = 0;
-    for (const emp of recipients) {
+    for (const emp of targets) {
       try { await sendMail(emp.email, subject, html); sent++; }
       catch (e) { failed++; console.error('Failed to email', emp.email, e.message); }
     }
-    console.log('Broadcast sent to ' + sent + ' of ' + recipients.length + ' recipients (' + failed + ' failed).');
+    console.log('Broadcast sent to ' + sent + ' of ' + targets.length + ' recipients (' + failed + ' failed).');
     return;
   }
 

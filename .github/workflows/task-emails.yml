@@ -32,4 +32,5 @@ jobs:
           BROADCAST_SUBJECT: ${{ github.event.client_payload.subject }}
           BROADCAST_MESSAGE: ${{ github.event.client_payload.message }}
           BROADCAST_SENDER: ${{ github.event.client_payload.senderName }}
+          BROADCAST_RECIPIENT: ${{ github.event.client_payload.recipientEmail }}
         run: node scripts/send-task-emails.js broadcast
