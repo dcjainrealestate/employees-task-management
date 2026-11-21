@@ -1,0 +1,35 @@
+name: Task Emails
+
+on:
+  schedule:
+    # 02:30 UTC = 8:00 AM IST — daily task-update digest to every member.
+    - cron: '30 2 * * *'
+  repository_dispatch:
+    types: [send-broadcast]
+  workflow_dispatch:
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install mailer dependencies
+        run: npm install @supabase/supabase-js nodemailer --no-save
+      - name: Send daily digest
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: node scripts/send-task-emails.js daily
+      - name: Send admin broadcast
+        if: github.event_name == 'repository_dispatch'
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          BROADCAST_SUBJECT: ${{ github.event.client_payload.subject }}
+          BROADCAST_MESSAGE: ${{ github.event.client_payload.message }}
+          BROADCAST_SENDER: ${{ github.event.client_payload.senderName }}
+        run: node scripts/send-task-emails.js broadcast
