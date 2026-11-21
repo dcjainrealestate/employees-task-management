@@ -14,6 +14,10 @@
 //   task-assigned  - sends one instant email to whoever a task was just
 //                    assigned to. Fired automatically by DB.addTask() in the
 //                    app whenever a task's assignee differs from its creator.
+//   failure-alert  - sends GMAIL_USER itself a short email when a daily,
+//                    broadcast, or task-assigned step in this same workflow
+//                    run failed, so a broken secret or a Gmail outage gets
+//                    noticed instead of silently skipping everyone's email.
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
 
@@ -23,8 +27,8 @@ const SUPABASE_URL = 'https://iubvxxihxqesabwflxsq.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_sZr74GUFEBqYaAJi8ar_fg_FtiYhsHz';
 
 const mode = process.argv[2];
-if (mode !== 'daily' && mode !== 'broadcast' && mode !== 'task-assigned') {
-  console.error('Usage: node send-task-emails.js <daily|broadcast|task-assigned>');
+if (mode !== 'daily' && mode !== 'broadcast' && mode !== 'task-assigned' && mode !== 'failure-alert') {
+  console.error('Usage: node send-task-emails.js <daily|broadcast|task-assigned|failure-alert>');
   process.exit(1);
 }
 
@@ -60,6 +64,33 @@ async function main() {
   });
   async function sendMail(to, subject, html) {
     await transporter.sendMail({ from: '"DC Jain Task Management" <' + process.env.GMAIL_USER + '>', to, subject, html });
+  }
+
+  if (mode === 'failure-alert') {
+    const to = (process.env.GMAIL_USER || '').trim();
+    const event = (process.env.FAILED_EVENT || 'unknown').trim();
+    const runUrl = (process.env.FAILED_RUN_URL || '').trim();
+    if (!to) {
+      console.error('Missing GMAIL_USER — cannot send a failure alert to anyone');
+      process.exit(1);
+    }
+    const html =
+      '<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937;max-width:560px">' +
+      '<p>A step in the Task Emails workflow just failed (triggered by a <strong>' + escapeHtml(event) + '</strong> event).</p>' +
+      (runUrl ? '<p><a href="' + runUrl + '">View the failed run on GitHub</a></p>' : '') +
+      '<p style="color:#6b7280;font-size:12px;margin-top:16px">If this was the daily digest, members did not get their task update today. Check the run logs for the actual error.</p>' +
+      '</div>';
+    // Best-effort: if the failure itself was bad Gmail credentials, this
+    // send will also fail — GitHub's own failure notification to the repo
+    // owner is the fallback in that specific case.
+    try {
+      await sendMail(to, 'Task Emails workflow failed', html);
+      console.log('Failure alert sent to ' + to);
+    } catch (e) {
+      console.error('Could not even send the failure alert:', e.message);
+      process.exit(1);
+    }
+    return;
   }
 
   if (mode === 'task-assigned') {

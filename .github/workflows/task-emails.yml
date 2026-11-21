@@ -44,3 +44,14 @@ jobs:
           TASK_DUE_DATE: ${{ github.event.client_payload.dueDate }}
           TASK_ASSIGNED_BY: ${{ github.event.client_payload.assignedByName }}
         run: node scripts/send-task-emails.js task-assigned
+      # Runs only if one of the steps above failed — otherwise a broken
+      # schedule or a bad secret fails silently and nobody finds out until
+      # someone notices a missing digest.
+      - name: Alert on failure
+        if: failure()
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          FAILED_EVENT: ${{ github.event_name }}
+          FAILED_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/send-task-emails.js failure-alert
